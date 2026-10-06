@@ -1,185 +1,47 @@
-#!/bin/bash
-
-# Automatic download script for robot descriptions
-# Usage: ./download_robot_descriptions.sh [target_dir]
-#   target_dir: Target directory (default: src/rl_sar_zoo)
-#   Example: ./download_robot_descriptions.sh src/rl_sar_zoo
-
-set -e
-
-# Get script directory
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-
-# Get project root (parent directory of scripts)
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-cd "$PROJECT_ROOT"
-
-# Load common utilities
-source "${SCRIPT_DIR}/common.sh"
-
-# Parse arguments
-if [ $# -eq 0 ]; then
-    TARGET_DIR="src/rl_sar_zoo"
-else
-    TARGET_DIR="$1"
-fi
-
-# Robot descriptions storage path
-ROBOT_DESC_DIR="${PROJECT_ROOT}/${TARGET_DIR}"
-
-# Repository configuration
-REPO_URL="https://github.com/fan-ziqi/rl_sar_zoo.git"
-REPO_BRANCH="main"
-
-# Expected version - update this when URDF files need to be updated
-EXPECTED_VERSION="1.0.2"
-
-# Robot descriptions VERSION file (installed version)
-ROBOT_DESC_VERSION_FILE="${ROBOT_DESC_DIR}/VERSION"
-
-# Function: Get current installed version
-get_current_version() {
-    if [ -f "$ROBOT_DESC_VERSION_FILE" ]; then
-        cat "$ROBOT_DESC_VERSION_FILE" | tr -d '[:space:]'
-    else
-        echo "0.0.0"
-    fi
-}
-
-# Function: Check if version is up-to-date
-is_version_uptodate() {
-    local current_version=$(get_current_version)
-    if [ "$current_version" = "$EXPECTED_VERSION" ]; then
-        return 0
-    fi
-    return 1
-}
-
-# Function: Validate robot descriptions installation
-is_robot_descriptions_valid() {
-    if [ ! -d "$ROBOT_DESC_DIR" ]; then
-        return 1
-    fi
-
-    # Check if directory contains expected robot description files
-    # Look for at least one robot description directory
-    local robot_count=$(find "$ROBOT_DESC_DIR" -maxdepth 1 -type d -name "*_description" | wc -l)
-    if [ "$robot_count" -gt 0 ]; then
-        return 0
-    fi
-
-    return 1
-}
-
-# Main execution
-print_header "[Robot Descriptions Setup]"
-
-# Check if robot descriptions already exist and are valid
-if is_robot_descriptions_valid; then
-    # Check if version is up-to-date
-    if is_version_uptodate; then
-        current_version=$(get_current_version)
-        print_success "Robot descriptions are up-to-date (version: ${current_version})"
-        print_info "Installation path: ${ROBOT_DESC_DIR}"
-        exit 0
-    fi
-
-    # Version mismatch - need to update
-    current_version=$(get_current_version)
-    print_warning "Version mismatch: installed=${current_version}, expected=${EXPECTED_VERSION}"
-
-    # Check network status
-    if check_network_status "github.com"; then
-        # Online: try to update if it's a git repository
-        if [ -d "$ROBOT_DESC_DIR/.git" ]; then
-            print_info "Attempting to update robot descriptions..."
-            cd "$ROBOT_DESC_DIR"
-
-            git pull origin "$REPO_BRANCH" || {
-                print_warning "Update failed, continuing with existing version"
-                cd "$PROJECT_ROOT"
-                exit 0
-            }
-
-            cd "$PROJECT_ROOT"
-            print_success "Robot descriptions updated successfully"
-        else
-            print_warning "Not a git repository, cannot update"
-        fi
-    else
-        print_warning "Network unavailable, skipping update"
-    fi
-
-    print_success "Robot descriptions are available"
-    print_info "Installation path: ${ROBOT_DESC_DIR}"
+#!/usr/bin/env bash
+# Download only the Go2/Go2W MJCF models and their mesh/texture resources.
+set -euo pipefail
+project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+asset_dir="${1:-${project_dir}/assets}"
+asset_revision=7dd30bdc7806898950b354260655d5a7f0ce844e
+if [[ -f "$asset_dir/go2/mjcf/scene.xml" && -f "$asset_dir/go2w/mjcf/scene.xml" ]]; then
+    echo "Go2/Go2W assets already available: $asset_dir"
     exit 0
 fi
-
-# Robot descriptions not found or invalid, need to download
-print_warning "Robot descriptions not found or invalid"
-
-# Check if directory exists but is not valid
-if [ -d "$ROBOT_DESC_DIR" ]; then
-    if [ -d "$ROBOT_DESC_DIR/.git" ]; then
-        # Check network before attempting update
-        if ! check_network_status "github.com"; then
-            print_error "Cannot fix incomplete installation in offline mode"
-            print_info "Please run with network access or manually remove directory: $ROBOT_DESC_DIR"
-            exit 1
-        fi
-
-        print_warning "Robot descriptions directory exists but is incomplete"
-        print_info "Attempting to update repository..."
-        cd "$ROBOT_DESC_DIR"
-
-        git pull origin "$REPO_BRANCH" || {
-            print_error "Update failed"
-            cd "$PROJECT_ROOT"
-            exit 1
-        }
-
-        cd "$PROJECT_ROOT"
-
-        # Recheck validity after update attempt
-        if is_robot_descriptions_valid; then
-            print_success "Robot descriptions are now valid"
-            print_info "Installation path: ${ROBOT_DESC_DIR}"
-            exit 0
-        else
-            print_error "Robot descriptions still invalid after update"
-            print_info "Consider removing directory and re-cloning: $ROBOT_DESC_DIR"
-            exit 1
-        fi
-    else
-        print_error "Target directory exists but is not a git repository: $ROBOT_DESC_DIR"
-        print_info "Please remove or rename it manually"
+cache_dir="${project_dir}/library/robot_assets"
+if [[ ! -d "$cache_dir/.git" ]]; then
+    mkdir -p "${project_dir}/library"
+    git clone --depth 1 --filter=blob:none --sparse https://github.com/fan-ziqi/rl_sar_zoo.git "$cache_dir"
+fi
+if ! git -C "$cache_dir" cat-file -e "${asset_revision}^{commit}" 2>/dev/null; then
+    git -C "$cache_dir" fetch --depth 1 origin "$asset_revision"
+fi
+git -C "$cache_dir" sparse-checkout set go2_description/mjcf go2w_description/mjcf
+git -C "$cache_dir" checkout --detach "$asset_revision"
+mkdir -p "$asset_dir"
+for robot in go2 go2w; do
+    source_dir="$cache_dir/${robot}_description"
+    if [[ ! -d "$source_dir/mjcf" ]]; then
+        echo "Missing MJCF resources: $source_dir" >&2
         exit 1
     fi
-fi
-
-# Need to clone new repository
-# Check network before cloning
-if ! check_network_status "github.com"; then
-    print_error "Cannot download robot descriptions in offline mode"
-    print_info "Please run this script with network access or manually download to: $ROBOT_DESC_DIR"
-    exit 1
-fi
-
-print_info "Cloning robot descriptions repository..."
-
-git clone --branch "$REPO_BRANCH" "$REPO_URL" "$ROBOT_DESC_DIR" || {
-    print_error "Clone failed"
-    print_info "Please check your network connection and repository URL"
-    exit 1
-}
-
-# Verify installation
-if ! is_robot_descriptions_valid; then
-    print_error "Robot descriptions installation failed"
-    exit 1
-fi
-
-print_separator
-print_success "Robot descriptions setup completed!"
-print_info "Installation path: ${ROBOT_DESC_DIR}"
-print_info "Version: ${EXPECTED_VERSION}"
+    if [[ -f "$asset_dir/$robot/mjcf/scene.xml" ]]; then continue; fi
+    if [[ -e "$asset_dir/$robot" ]]; then
+        echo "Assets are incomplete at $asset_dir/$robot; move them aside before downloading." >&2
+        exit 1
+    fi
+    mkdir -p "$asset_dir/$robot"
+    for resource in mjcf; do
+        if [[ -d "$source_dir/$resource" ]]; then
+            cp -R "$source_dir/$resource" "$asset_dir/$robot/"
+        fi
+    done
+    for notice in LICENSE LICENSE.txt README.md; do
+        if [[ -f "$source_dir/$notice" ]]; then
+            cp "$source_dir/$notice" "$asset_dir/$robot/"
+        fi
+    done
+done
+if [[ -f "$cache_dir/LICENSE" ]]; then cp "$cache_dir/LICENSE" "$asset_dir/UPSTREAM_LICENSE"; fi
+git -C "$cache_dir" rev-parse HEAD > "$asset_dir/UPSTREAM_REVISION"
+echo "Installed only Go2/Go2W resources in $asset_dir"

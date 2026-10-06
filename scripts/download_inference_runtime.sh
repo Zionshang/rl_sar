@@ -21,6 +21,8 @@ source "${SCRIPT_DIR}/common.sh"
 # Detect platform and architecture
 OS_TYPE="$(uname -s)"
 ARCH_TYPE="$(uname -m)"
+IS_JETSON=false
+if [[ -f /etc/nv_tegra_release ]]; then IS_JETSON=true; fi
 
 # Parse arguments: support both new and old usage
 if [ $# -eq 0 ]; then
@@ -125,7 +127,7 @@ download_libtorch() {
 
     # Download
     if command -v curl &> /dev/null; then
-        curl -L --progress-bar -o "${archive_path}" "${url}" || {
+        curl --fail --location --silent --show-error -o "${archive_path}" "${url}" || {
             print_error "Download failed"
             rm -f "${archive_path}"
             exit 1
@@ -223,7 +225,7 @@ download_onnxruntime() {
 
     # Download
     if command -v curl &> /dev/null; then
-        curl -L --progress-bar -o "${archive_path}" "${url}" || {
+        curl --fail --location --silent --show-error -o "${archive_path}" "${url}" || {
             print_error "Download failed"
             rm -f "${archive_path}"
             exit 1

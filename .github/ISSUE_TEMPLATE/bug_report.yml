@@ -38,14 +38,14 @@ body:
     required: true
 - type: input
   attributes:
-    label: ROS Version
-    placeholder: e.g. noetic, melodic
+    label: Robot and policy
+    placeholder: e.g. Go2W, robot_lab, ONNX
   validations:
     required: true
 - type: input
   attributes:
-    label: Python Version
-    placeholder: e.g. Python 3.8, Conda-Python 3.11
+    label: Build configuration
+    placeholder: e.g. MuJoCo 3.2.7, ENABLE_TORCH=OFF, ENABLE_ONNX=ON
   validations:
     required: true
 

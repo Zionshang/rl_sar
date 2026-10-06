@@ -124,13 +124,13 @@ download_mujoco() {
     # Download archive
     print_info "Downloading MuJoCo..."
     if command -v wget &> /dev/null; then
-        wget -q --show-progress "$url" -O "$archive_name" || {
+        wget -q "$url" -O "$archive_name" || {
             print_error "Download failed"
             rm -rf "$temp_dir"
             exit 1
         }
     elif command -v curl &> /dev/null; then
-        curl -L --progress-bar "$url" -o "$archive_name" || {
+        curl --fail --location --silent --show-error "$url" -o "$archive_name" || {
             print_error "Download failed"
             rm -rf "$temp_dir"
             exit 1
